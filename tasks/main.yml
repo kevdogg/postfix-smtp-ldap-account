@@ -62,4 +62,4 @@
   failed_when:
     - postfix_ldap_account_search.rc != 0
     - postfix_ldap_account_search.rc != 32
-  no_log: true
+  # no_log: true
