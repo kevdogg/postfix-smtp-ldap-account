@@ -31,7 +31,7 @@
 
 - name: Write LDAP provisioner password
   ansible.builtin.copy:
-    content: "{{ ldap_provisioner_password }}\n"
+    content: "{{ ldap_provisioner_password }}"
     dest: "{{ postfix_ldap_password_file.path }}"
     owner: root
     group: root
