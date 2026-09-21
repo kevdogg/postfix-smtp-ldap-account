@@ -2,7 +2,7 @@
 ## Ansible Role which allows ansible script to provision ou=mail,dc=ldap,dc=gohilton,dc=com accounts when postfix is installed to local server
 
 
-This role is used in conjunction with postfix-setup ansible role to standup a postfix localhost relay on server<br><br>
+This role is used in conjunction with [postfix-setup](https://github.com/kevdogg/postfix-setup) ansible role to standup a postfix localhost relay on server<br><br>
 The localhost postfix relay will either forward mail to smtp-prospect.gohilton.com or smtp-quincy.gohilton.com depending on ldap configuration.<br><br>
 Mail is sent over an encrypted TLS 1.3 connection using a post-quantum algorithm <br><br>
 The local postfix server needs to authenticate to either smtp-prospect.gohilton.com or smtp-quincy.gohilton.com.  These servers will authenticate using ldap (ldap-prospect.gohilton.com or ldap-quincy.gohilton.com ((ldap-active.gohilton.com))) in via cyrus/ldap plugin. <br><br>
