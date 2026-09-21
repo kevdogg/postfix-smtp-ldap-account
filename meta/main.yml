@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  author: kevdog
+  description: Provisions and validates per-host Postfix SMTP accounts in LDAP
+  license: private
+  min_ansible_version: "2.15"
+
+dependencies: []
