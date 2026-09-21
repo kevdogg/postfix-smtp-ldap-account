@@ -39,7 +39,7 @@
   changed_when: false
   no_log: true
 
-  - name: Check whether Postfix SMTP LDAP account exists
+- name: Check whether Postfix SMTP LDAP account exists
   ansible.builtin.command:
     argv:
       - ldapsearch
