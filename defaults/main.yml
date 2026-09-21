@@ -1,0 +1,23 @@
+---
+# LDAP connection
+postfix_ldap_uri: "ldaps://ldap-active.gohilton.com"
+postfix_ldap_mail_base_dn: "ou=mail,dc=ldap,dc=gohilton,dc=com"
+
+# LDAP account used to provision SMTP accounts.
+# Password is supplied separately from Ansible Vault.
+postfix_ldap_provisioner_dn: "cn=ldap-provisioner,ou=services,dc=ldap,dc=gohilton,dc=com"
+
+# SMTP account derived from the inventory hostname.
+# Example: arch160.gohilton.com -> smtp-arch160
+postfix_sasl_username: "smtp-{{ inventory_hostname_short }}"
+postfix_sasl_dn: "cn={{ postfix_sasl_username }},{{ postfix_ldap_mail_base_dn }}"
+
+# Existing LDAP accounts are never updated unless explicitly enabled.
+postfix_ldap_allow_password_update: false
+
+# Argon2 settings matching the LDAP server configuration.
+postfix_ldap_argon2_module_path: "/usr/lib/ldap"
+postfix_ldap_argon2_module: "argon2.so"
+postfix_ldap_argon2_memory: 65536
+postfix_ldap_argon2_iterations: 3
+postfix_ldap_argon2_parallelism: 4

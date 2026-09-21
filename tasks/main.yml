@@ -1,0 +1,65 @@
+---
+- name: Verify required credentials are defined
+  ansible.builtin.assert:
+    that:
+      - ldap_provisioner_password is defined
+      - ldap_provisioner_password | length > 0
+      - postfix_sasl_passwords is defined
+      - inventory_hostname in postfix_sasl_passwords
+      - postfix_sasl_passwords[inventory_hostname] | length > 0
+    fail_msg: >-
+      Required LDAP provisioning or Postfix SASL credentials are
+      not defined for {{ inventory_hostname }}.
+  no_log: true
+
+- name: Create temporary LDAP provisioner password file
+  ansible.builtin.tempfile:
+    state: file
+    prefix: postfix-ldap-provisioner-
+  register: postfix_ldap_password_file
+  changed_when: false
+  no_log: true
+
+- name: Secure temporary LDAP provisioner password file
+  ansible.builtin.file:
+    path: "{{ postfix_ldap_password_file.path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  changed_when: false
+  no_log: true
+
+- name: Write LDAP provisioner password
+  ansible.builtin.copy:
+    content: "{{ ldap_provisioner_password }}\n"
+    dest: "{{ postfix_ldap_password_file.path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  changed_when: false
+  no_log: true
+
+  - name: Check whether Postfix SMTP LDAP account exists
+  ansible.builtin.command:
+    argv:
+      - ldapsearch
+      - -LLL
+      - -x
+      - -H
+      - "{{ postfix_ldap_uri }}"
+      - -D
+      - "{{ postfix_ldap_provisioner_dn }}"
+      - -y
+      - "{{ postfix_ldap_password_file.path }}"
+      - -b
+      - "{{ postfix_sasl_dn }}"
+      - -s
+      - base
+      - "(objectClass=*)"
+      - dn
+  register: postfix_ldap_account_search
+  changed_when: false
+  failed_when:
+    - postfix_ldap_account_search.rc != 0
+    - postfix_ldap_account_search.rc != 32
+  no_log: true
