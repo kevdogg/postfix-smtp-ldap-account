@@ -63,3 +63,72 @@
     - postfix_ldap_account_search.rc != 0
     - postfix_ldap_account_search.rc != 32
   no_log: true
+
+# account exists?
+# │
+# ├── NO  → create account
+# │
+# └── YES → test Vault password by binding as SMTP account
+#            │
+#            ├── bind succeeds → password matches → do nothing
+#            │
+#            └── bind fails → password mismatch
+#                             │
+#                             ├── allow_password_update = true
+#                             │       → generate Argon2 hash
+#                             │       → replace userPassword
+#                             │
+#                             └── allow_password_update = false
+#                                     → fail play
+
+
+- name: Set Postfix SMTP LDAP account existence
+  ansible.builtin.set_fact:
+    postfix_ldap_account_exists: "{{ postfix_ldap_account_search.rc == 0 }}"
+
+- name: Create temporary Postfix SMTP password file
+  ansible.builtin.tempfile:
+    state: file
+    prefix: postfix-smtp-password-
+  register: postfix_smtp_password_file
+  changed_when: false
+  no_log: true
+  when: postfix_ldap_account_exists
+
+- name: Secure temporary Postfix SMTP password file
+  ansible.builtin.file:
+    path: "{{ postfix_smtp_password_file.path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  changed_when: false
+  no_log: true
+  when: postfix_ldap_account_exists
+
+- name: Write Postfix SMTP password
+  ansible.builtin.copy:
+    content: "{{ postfix_sasl_passwords[inventory_hostname] }}"
+    dest: "{{ postfix_smtp_password_file.path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  changed_when: false
+  no_log: true
+  when: postfix_ldap_account_exists
+
+- name: Verify Postfix SMTP LDAP password
+  ansible.builtin.command:
+    argv:
+      - ldapwhoami
+      - -x
+      - -H
+      - "{{ postfix_ldap_uri }}"
+      - -D
+      - "{{ postfix_sasl_dn }}"
+      - -y
+      - "{{ postfix_smtp_password_file.path }}"
+  register: postfix_ldap_password_test
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when: postfix_ldap_account_exists
