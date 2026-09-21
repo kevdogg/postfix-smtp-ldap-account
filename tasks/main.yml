@@ -132,3 +132,18 @@
   failed_when: false
   no_log: true
   when: postfix_ldap_account_exists
+
+- name: Set Postfix SMTP LDAP password match status
+  ansible.builtin.set_fact:
+    postfix_ldap_password_matches: "{{ postfix_ldap_password_test.rc == 0 }}"
+  when: postfix_ldap_account_exists
+
+# Logic at this point:
+# 
+# account_exists = true
+# password_matches = true   → nothing to do
+# 
+# account_exists = true
+# password_matches = false  → check postfix_ldap_allow_password_update
+
+
