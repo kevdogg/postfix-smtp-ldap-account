@@ -146,4 +146,14 @@
 # account_exists = true
 # password_matches = false  → check postfix_ldap_allow_password_update
 
-
+- name: Fail when Postfix SMTP LDAP password differs and updates are disabled
+  ansible.builtin.fail:
+    msg: >-
+      The LDAP account {{ postfix_sasl_dn }} exists, but its password
+      does not match the password stored in Ansible Vault.
+      Set postfix_ldap_allow_password_update=true to permit the role
+      to update the LDAP password.
+  when:
+    - postfix_ldap_account_exists
+    - not postfix_ldap_password_matches
+    - not postfix_ldap_allow_password_update
