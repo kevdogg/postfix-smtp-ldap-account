@@ -172,7 +172,7 @@
       - "{{ postfix_smtp_password_file.path }}"
   register: postfix_ldap_password_hash
   changed_when: false
-  no_log: true
+  no_log: false
   when:
     - postfix_ldap_account_exists
     - not postfix_ldap_password_matches
