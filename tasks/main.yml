@@ -157,3 +157,23 @@
     - postfix_ldap_account_exists
     - not postfix_ldap_password_matches
     - not postfix_ldap_allow_password_update
+
+- name: Generate Argon2 hash for updated Postfix SMTP password
+  ansible.builtin.command:
+    argv:
+      - slappasswd
+      - -o
+      - "module-path={{ postfix_ldap_argon2_module_path }}"
+      - -o
+      - "module-load={{ postfix_ldap_argon2_module }} m={{ postfix_ldap_argon2_memory }} t={{ postfix_ldap_argon2_iterations }} p={{ postfix_ldap_argon2_parallelism }}"
+      - -h
+      - "{ARGON2}"
+      - -T
+      - "{{ postfix_smtp_password_file.path }}"
+  register: postfix_ldap_password_hash
+  changed_when: false
+  no_log: true
+  when:
+    - postfix_ldap_account_exists
+    - not postfix_ldap_password_matches
+    - postfix_ldap_allow_password_update
