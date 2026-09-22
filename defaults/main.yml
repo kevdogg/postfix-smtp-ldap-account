@@ -13,7 +13,7 @@ postfix_sasl_username: "smtp-{{ inventory_hostname_short }}"
 postfix_sasl_dn: "cn={{ postfix_sasl_username }},{{ postfix_ldap_mail_base_dn }}"
 
 # Existing LDAP accounts are never updated unless explicitly enabled.
-postfix_ldap_allow_password_update: false
+postfix_ldap_allow_password_update: true
 
 # Argon2 settings matching the LDAP server configuration.
 postfix_ldap_argon2_module_path: "/usr/lib/ldap"
