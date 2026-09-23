@@ -12,168 +12,195 @@
       not defined for {{ inventory_hostname }}.
   no_log: true
 
-- name: Create temporary LDAP provisioner password file
-  ansible.builtin.tempfile:
-    state: file
-    prefix: postfix-ldap-provisioner-
-  register: postfix_ldap_password_file
-  changed_when: false
-  no_log: true
+- name: Provision Postfix SMTP LDAP account
+  block:
 
-- name: Secure temporary LDAP provisioner password file
-  ansible.builtin.file:
-    path: "{{ postfix_ldap_password_file.path }}"
-    owner: root
-    group: root
-    mode: "0600"
-  changed_when: false
-  no_log: true
+    - name: Create temporary LDAP provisioner password file
+      ansible.builtin.tempfile:
+        state: file
+        prefix: postfix-ldap-provisioner-
+      register: postfix_ldap_password_file
+      changed_when: false
+      no_log: true
+    
+    - name: Secure temporary LDAP provisioner password file
+      ansible.builtin.file:
+        path: "{{ postfix_ldap_password_file.path }}"
+        owner: root
+        group: root
+        mode: "0600"
+      changed_when: false
+      no_log: true
+    
+    - name: Write LDAP provisioner password
+      ansible.builtin.copy:
+        content: "{{ ldap_provisioner_password }}"
+        dest: "{{ postfix_ldap_password_file.path }}"
+        owner: root
+        group: root
+        mode: "0600"
+      changed_when: false
+      no_log: true
+    
+    - name: Check whether Postfix SMTP LDAP account exists
+      ansible.builtin.command:
+        argv:
+          - ldapsearch
+          - -LLL
+          - -x
+          - -H
+          - "{{ postfix_ldap_uri }}"
+          - -D
+          - "{{ postfix_ldap_provisioner_dn }}"
+          - -y
+          - "{{ postfix_ldap_password_file.path }}"
+          - -b
+          - "{{ postfix_sasl_dn }}"
+          - -s
+          - base
+          - "(objectClass=*)"
+          - dn
+      register: postfix_ldap_account_search
+      changed_when: false
+      failed_when:
+        - postfix_ldap_account_search.rc != 0
+        - postfix_ldap_account_search.rc != 32
+      no_log: true
+    
+    # account exists?
+    # │
+    # ├── NO  → create account
+    # │
+    # └── YES → test Vault password by binding as SMTP account
+    #            │
+    #            ├── bind succeeds → password matches → do nothing
+    #            │
+    #            └── bind fails → password mismatch
+    #                             │
+    #                             ├── allow_password_update = true
+    #                             │       → update passowrd with ldappasswd
+    #                             │       → slapd hashes password using configured password schema {ARGON2}
+    #                             │
+    #                             └── allow_password_update = false
+    #                                     → fail play
+    
+    
+    - name: Set Postfix SMTP LDAP account existence
+      ansible.builtin.set_fact:
+        postfix_ldap_account_exists: "{{ postfix_ldap_account_search.rc == 0 }}"
+    
+    - name: Create temporary Postfix SMTP password file
+      ansible.builtin.tempfile:
+        state: file
+        prefix: postfix-smtp-password-
+      register: postfix_smtp_password_file
+      changed_when: false
+      no_log: true
+      when: postfix_ldap_account_exists
+    
+    - name: Secure temporary Postfix SMTP password file
+      ansible.builtin.file:
+        path: "{{ postfix_smtp_password_file.path }}"
+        owner: root
+        group: root
+        mode: "0600"
+      changed_when: false
+      no_log: true
+      when: postfix_ldap_account_exists
+    
+    - name: Write Postfix SMTP password
+      ansible.builtin.copy:
+        content: "{{ postfix_sasl_passwords[inventory_hostname] }}"
+        dest: "{{ postfix_smtp_password_file.path }}"
+        owner: root
+        group: root
+        mode: "0600"
+      changed_when: false
+      no_log: true
+      when: postfix_ldap_account_exists
+    
+    - name: Verify Postfix SMTP LDAP password
+      ansible.builtin.command:
+        argv:
+          - ldapwhoami
+          - -x
+          - -H
+          - "{{ postfix_ldap_uri }}"
+          - -D
+          - "{{ postfix_sasl_dn }}"
+          - -y
+          - "{{ postfix_smtp_password_file.path }}"
+      register: postfix_ldap_password_test
+      changed_when: false
+      failed_when: false
+      no_log: true
+      when: postfix_ldap_account_exists
+    
+    - name: Set Postfix SMTP LDAP password match status
+      ansible.builtin.set_fact:
+        postfix_ldap_password_matches: "{{ postfix_ldap_password_test.rc == 0 }}"
+      when: postfix_ldap_account_exists
+    
+    # Logic at this point:
+    # 
+    # account_exists = true
+    # password_matches = true   → nothing to do
+    # 
+    # account_exists = true
+    # password_matches = false  → check postfix_ldap_allow_password_update
+    
+    - name: Fail when Postfix SMTP LDAP password differs and updates are disabled
+      ansible.builtin.fail:
+        msg: >-
+          The LDAP account {{ postfix_sasl_dn }} exists, but its password
+          does not match the password stored in Ansible Vault.
+          Set postfix_ldap_allow_password_update=true to permit the role
+          to update the LDAP password.
+      when:
+        - postfix_ldap_account_exists
+        - not postfix_ldap_password_matches
+        - not postfix_ldap_allow_password_update
+    
+    - name: Update Postfix SMTP LDAP password
+      ansible.builtin.command:
+        argv:
+          - ldappasswd
+          - -x
+          - -H
+          - "{{ postfix_ldap_uri }}"
+          - -D
+          - "{{ postfix_ldap_provisioner_dn }}"
+          - -y
+          - "{{ postfix_ldap_password_file.path }}"
+          - -T
+          - "{{ postfix_smtp_password_file.path }}"
+          - "{{ postfix_sasl_dn }}"
+      no_log: true
+      when:
+        - postfix_ldap_account_exists
+        - not postfix_ldap_password_matches
+        - postfix_ldap_allow_password_update
 
-- name: Write LDAP provisioner password
-  ansible.builtin.copy:
-    content: "{{ ldap_provisioner_password }}"
-    dest: "{{ postfix_ldap_password_file.path }}"
-    owner: root
-    group: root
-    mode: "0600"
-  changed_when: false
-  no_log: true
+  always:
 
-- name: Check whether Postfix SMTP LDAP account exists
-  ansible.builtin.command:
-    argv:
-      - ldapsearch
-      - -LLL
-      - -x
-      - -H
-      - "{{ postfix_ldap_uri }}"
-      - -D
-      - "{{ postfix_ldap_provisioner_dn }}"
-      - -y
-      - "{{ postfix_ldap_password_file.path }}"
-      - -b
-      - "{{ postfix_sasl_dn }}"
-      - -s
-      - base
-      - "(objectClass=*)"
-      - dn
-  register: postfix_ldap_account_search
-  changed_when: false
-  failed_when:
-    - postfix_ldap_account_search.rc != 0
-    - postfix_ldap_account_search.rc != 32
-  no_log: true
+    - name: Remove temporary LDAP provisioner password file
+      ansible.builtin.file:
+        path: "{{ postfix_ldap_password_file.path }}"
+        state: absent
+      when:
+        - postfix_ldap_password_file is defined
+        - postfix_ldap_password_file.path is defined
+      changed_when: false
+      no_log: true
 
-# account exists?
-# │
-# ├── NO  → create account
-# │
-# └── YES → test Vault password by binding as SMTP account
-#            │
-#            ├── bind succeeds → password matches → do nothing
-#            │
-#            └── bind fails → password mismatch
-#                             │
-#                             ├── allow_password_update = true
-#                             │       → generate Argon2 hash
-#                             │       → replace userPassword
-#                             │
-#                             └── allow_password_update = false
-#                                     → fail play
+    - name: Remove temporary Postfix SMTP password file
+      ansible.builtin.file:
+        path: "{{ postfix_smtp_password_file.path }}"
+        state: absent
+      when:
+        - postfix_smtp_password_file is defined
+        - postfix_smtp_password_file.path is defined
+      changed_when: false
+      no_log: true
 
 
-- name: Set Postfix SMTP LDAP account existence
-  ansible.builtin.set_fact:
-    postfix_ldap_account_exists: "{{ postfix_ldap_account_search.rc == 0 }}"
-
-- name: Create temporary Postfix SMTP password file
-  ansible.builtin.tempfile:
-    state: file
-    prefix: postfix-smtp-password-
-  register: postfix_smtp_password_file
-  changed_when: false
-  no_log: true
-  when: postfix_ldap_account_exists
-
-- name: Secure temporary Postfix SMTP password file
-  ansible.builtin.file:
-    path: "{{ postfix_smtp_password_file.path }}"
-    owner: root
-    group: root
-    mode: "0600"
-  changed_when: false
-  no_log: true
-  when: postfix_ldap_account_exists
-
-- name: Write Postfix SMTP password
-  ansible.builtin.copy:
-    content: "{{ postfix_sasl_passwords[inventory_hostname] }}"
-    dest: "{{ postfix_smtp_password_file.path }}"
-    owner: root
-    group: root
-    mode: "0600"
-  changed_when: false
-  no_log: true
-  when: postfix_ldap_account_exists
-
-- name: Verify Postfix SMTP LDAP password
-  ansible.builtin.command:
-    argv:
-      - ldapwhoami
-      - -x
-      - -H
-      - "{{ postfix_ldap_uri }}"
-      - -D
-      - "{{ postfix_sasl_dn }}"
-      - -y
-      - "{{ postfix_smtp_password_file.path }}"
-  register: postfix_ldap_password_test
-  changed_when: false
-  failed_when: false
-  no_log: true
-  when: postfix_ldap_account_exists
-
-- name: Set Postfix SMTP LDAP password match status
-  ansible.builtin.set_fact:
-    postfix_ldap_password_matches: "{{ postfix_ldap_password_test.rc == 0 }}"
-  when: postfix_ldap_account_exists
-
-# Logic at this point:
-# 
-# account_exists = true
-# password_matches = true   → nothing to do
-# 
-# account_exists = true
-# password_matches = false  → check postfix_ldap_allow_password_update
-
-- name: Fail when Postfix SMTP LDAP password differs and updates are disabled
-  ansible.builtin.fail:
-    msg: >-
-      The LDAP account {{ postfix_sasl_dn }} exists, but its password
-      does not match the password stored in Ansible Vault.
-      Set postfix_ldap_allow_password_update=true to permit the role
-      to update the LDAP password.
-  when:
-    - postfix_ldap_account_exists
-    - not postfix_ldap_password_matches
-    - not postfix_ldap_allow_password_update
-
-- name: Update Postfix SMTP LDAP password
-  ansible.builtin.command:
-    argv:
-      - ldappasswd
-      - -x
-      - -H
-      - "{{ postfix_ldap_uri }}"
-      - -D
-      - "{{ postfix_ldap_provisioner_dn }}"
-      - -y
-      - "{{ postfix_ldap_password_file.path }}"
-      - -T
-      - "{{ postfix_smtp_password_file.path }}"
-      - "{{ postfix_sasl_dn }}"
-  no_log: true
-  when:
-    - postfix_ldap_account_exists
-    - not postfix_ldap_password_matches
-    - postfix_ldap_allow_password_update
