@@ -7,9 +7,19 @@ postfix_ldap_mail_base_dn: "ou=mail,dc=ldap,dc=gohilton,dc=com"
 # Password is supplied separately from Ansible Vault.
 postfix_ldap_provisioner_dn: "cn=ldap-provisioner,ou=services,dc=ldap,dc=gohilton,dc=com"
 
-# SMTP account derived from the inventory hostname.
-# Example: arch160.gohilton.com -> smtp-arch160
-postfix_sasl_username: "smtp-{{ inventory_hostname_short }}"
+# Example ldif entry
+# dn: cn=smtp@arch160.gohilton.com,ou=mail,dc=ldap,dc=gohilton,dc=com
+# objectClass: top
+# objectClass: person
+# objectClass: organizationalPerson
+# objectClass: inetOrgPerson
+# cn: smtp@arch160.gohilton.com
+# sn: smtp-arch160
+# uid: smtp@arch160.gohilton.com
+
+# SMTP service identity derived from the inventory FQDN.
+# Example: arch160.gohilton.com -> smtp@arch160.gohilton.com
+postfix_sasl_username: "smtp@{{ inventory_hostname }}"
 postfix_sasl_dn: "cn={{ postfix_sasl_username }},{{ postfix_ldap_mail_base_dn }}"
 
 # Existing LDAP accounts are never updated unless explicitly enabled.

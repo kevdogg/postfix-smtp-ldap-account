@@ -97,7 +97,6 @@
           register: postfix_smtp_password_file
           changed_when: false
           no_log: true
-          when: postfix_ldap_account_exists
         
         - name: Secure temporary Postfix SMTP password file
           ansible.builtin.file:
@@ -105,7 +104,6 @@
             mode: "0600"
           changed_when: false
           no_log: true
-          when: postfix_ldap_account_exists
         
         - name: Write Postfix SMTP password
           ansible.builtin.copy:
@@ -114,8 +112,89 @@
             mode: "0600"
           changed_when: false
           no_log: true
-          when: postfix_ldap_account_exists
-        
+
+        - name: Provision new Postfix SMTP LDAP account
+          when: not postfix_ldap_account_exists
+          block:
+
+            - name: Create Postfix SMTP LDAP account
+              ansible.builtin.command:
+                argv:
+                  - ldapadd
+                  - -x
+                  - -H
+                  - "{{ postfix_ldap_uri }}"
+                  - -D
+                  - "{{ postfix_ldap_provisioner_dn }}"
+                  - -y
+                  - "{{ postfix_ldap_password_file.path }}"
+                stdin: |
+                  dn: {{ postfix_sasl_dn }}
+                  objectClass: inetOrgPerson
+                  objectClass: organizationalPerson
+                  objectClass: person
+                  objectClass: top
+                  cn: {{ postfix_sasl_username }}
+                  sn: smtp-{{ inventory_hostname_short }}
+                  uid: {{ postfix_sasl_username }}
+              register: postfix_ldap_account_create
+
+            - name: Set initial Postfix SMTP LDAP password
+              ansible.builtin.command:
+                argv:
+                  - ldappasswd
+                  - -x
+                  - -H
+                  - "{{ postfix_ldap_uri }}"
+                  - -D
+                  - "{{ postfix_ldap_provisioner_dn }}"
+                  - -y
+                  - "{{ postfix_ldap_password_file.path }}"
+                  - -T
+                  - "{{ postfix_smtp_password_file.path }}"
+                  - "{{ postfix_sasl_dn }}"
+              no_log: true
+
+            - name: Verify new Postfix SMTP LDAP password
+              ansible.builtin.command:
+                argv:
+                  - ldapwhoami
+                  - -x
+                  - -H
+                  - "{{ postfix_ldap_uri }}"
+                  - -D
+                  - "{{ postfix_sasl_dn }}"
+                  - -y
+                  - "{{ postfix_smtp_password_file.path }}"
+              changed_when: false
+              no_log: true
+
+          rescue:
+
+            - name: Remove partially-created Postfix SMTP LDAP account
+              ansible.builtin.command:
+                argv:
+                  - ldapdelete
+                  - -x
+                  - -H
+                  - "{{ postfix_ldap_uri }}"
+                  - -D
+                  - "{{ postfix_ldap_provisioner_dn }}"
+                  - -y
+                  - "{{ postfix_ldap_password_file.path }}"
+                  - "{{ postfix_sasl_dn }}"
+              when:
+                - postfix_ldap_account_create is defined
+                - postfix_ldap_account_create.rc == 0
+              no_log: true
+
+            - name: Fail after Postfix SMTP LDAP account provisioning failure
+              ansible.builtin.fail:
+                msg: >-
+                  Failed to provision and verify the new LDAP account
+                  {{ postfix_sasl_dn }}. Any LDAP account created by this
+                  run has been rolled back.
+
         - name: Verify Postfix SMTP LDAP password
           ansible.builtin.command:
             argv:
